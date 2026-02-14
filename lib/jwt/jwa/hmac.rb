@@ -6,6 +6,12 @@ module JWT
     class Hmac
       include JWT::JWA::SigningAlgorithm
 
+      MIN_KEY_LENGTHS = {
+        'HS256' => 32,
+        'HS384' => 48,
+        'HS512' => 64
+      }.freeze
+
       def initialize(alg, digest)
         @alg = alg
         @digest = digest
@@ -15,6 +21,8 @@ module JWT
         signing_key ||= ''
         raise_verify_error!('HMAC key expected to be a String') unless signing_key.is_a?(String)
 
+        validate_key_length!(signing_key)
+
         OpenSSL::HMAC.digest(digest.new, signing_key, data)
       rescue OpenSSL::HMACError => e
         raise_verify_error!('OpenSSL 3.0 does not support nil or empty hmac_secret') if signing_key == '' && e.message == 'EVP_PKEY_new_mac_key: malloc failure'
@@ -23,6 +31,11 @@ module JWT
       end
 
       def verify(data:, signature:, verification_key:)
+        validation_key = verification_key || ''
+        raise_verify_error!('HMAC key expected to be a String') unless validation_key.is_a?(String)
+
+        validate_key_length!(validation_key)
+
         SecurityUtils.secure_compare(signature, sign(data: data, signing_key: verification_key))
       end
 
@@ -33,6 +46,16 @@ module JWT
       private
 
       attr_reader :digest
+
+      def validate_key_length!(key)
+        configured_min = JWT.configuration.decode.hmac_min_key_length
+        return unless configured_min
+
+        min_length = [configured_min, MIN_KEY_LENGTHS[alg]].compact.max
+        return if key.bytesize >= min_length
+
+        raise_verify_error!("HMAC key must be at least #{min_length} bytes for #{alg} algorithm")
+      end
 
       # Copy of https://github.com/rails/rails/blob/v7.0.3.1/activesupport/lib/active_support/security_utils.rb
       # rubocop:disable Naming/MethodParameterName, Style/StringLiterals, Style/NumericPredicate

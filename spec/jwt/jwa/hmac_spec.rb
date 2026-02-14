@@ -108,6 +108,56 @@ RSpec.describe JWT::JWA::Hmac do
         it { is_expected.to eql(response) }
       end
     end
+
+    context 'when hmac_min_key_length is configured' do
+      before do
+        JWT.configuration.decode.hmac_min_key_length = 32
+      end
+
+      after do
+        JWT.configuration.decode.hmac_min_key_length = nil
+      end
+
+      context 'when key shorter than configured minimum' do
+        let(:hmac_secret) { 'short' }
+
+        it 'raises error' do
+          expect { subject }.to raise_error(JWT::DecodeError, 'HMAC key must be at least 32 bytes for HS256 algorithm')
+        end
+      end
+
+      context 'when key meets minimum length' do
+        let(:hmac_secret) { 'a' * 32 }
+
+        it 'does not raise error' do
+          expect { subject }.not_to raise_error
+        end
+      end
+
+      context 'when hmac_min_key_length is higher than algorithm minimum' do
+        before do
+          JWT.configuration.decode.hmac_min_key_length = 64
+        end
+
+        context 'with HS384 algorithm and key shorter than configured' do
+          let(:instance) { described_class.new('HS384', OpenSSL::Digest.new('SHA384')) }
+          let(:hmac_secret) { 'a' * 48 }
+
+          it 'raises error using configured minimum' do
+            expect { subject }.to raise_error(JWT::DecodeError, 'HMAC key must be at least 64 bytes for HS384 algorithm')
+          end
+        end
+
+        context 'with HS384 algorithm and key meets configured' do
+          let(:instance) { described_class.new('HS384', OpenSSL::Digest.new('SHA384')) }
+          let(:hmac_secret) { 'a' * 64 }
+
+          it 'does not raise error' do
+            expect { subject }.not_to raise_error
+          end
+        end
+      end
+    end
   end
 
   describe '#verify' do
@@ -123,6 +173,43 @@ RSpec.describe JWT::JWA::Hmac do
       let(:signature) { [60, 56, 87, 72, 185, 194].pack('C*') }
 
       it { is_expected.to be(false) }
+    end
+
+    context 'when verification_key is not a String' do
+      let(:signature) { valid_signature }
+      let(:hmac_secret) { 123 }
+
+      it 'raises error' do
+        expect { subject }.to raise_error(JWT::DecodeError, 'HMAC key expected to be a String')
+      end
+    end
+
+    context 'when hmac_min_key_length is configured' do
+      before do
+        JWT.configuration.decode.hmac_min_key_length = 32
+      end
+
+      after do
+        JWT.configuration.decode.hmac_min_key_length = nil
+      end
+
+      let(:signature) { valid_signature }
+
+      context 'when key shorter than configured minimum' do
+        let(:hmac_secret) { 'short' }
+
+        it 'raises error' do
+          expect { subject }.to raise_error(JWT::DecodeError, 'HMAC key must be at least 32 bytes for HS256 algorithm')
+        end
+      end
+
+      context 'when key meets minimum length' do
+        let(:hmac_secret) { 'a' * 32 }
+
+        it 'does not raise error' do
+          expect { subject }.not_to raise_error
+        end
+      end
     end
   end
 end
